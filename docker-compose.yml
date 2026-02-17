@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aetherscan-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./shared:/shared
+    environment:
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - aetherscan-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aetherscan-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+      - ./shared:/shared
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_BACKEND_WS=ws://backend:8000
+      - NEXT_PUBLIC_BACKEND_HTTP=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - aetherscan-network
+    restart: unless-stopped
+
+networks:
+  aetherscan-network:
+    driver: bridge
