@@ -1,11 +1,10 @@
-FROM nvidia/cuda:12.1.1-base-ubuntu22.04
+FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
 
 # Set working directory
 WORKDIR /app
 
 # Prevent interactive prompts during build
 ENV DEBIAN_FRONTEND=noninteractive
-
 
 # Install Python 3.12 and system dependencies
 RUN apt-get update && apt-get install -y \
@@ -18,6 +17,9 @@ RUN apt-get update && apt-get install -y \
     git \
     wget \
     curl \
+    build-essential \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create symbolic links for python
@@ -30,8 +32,40 @@ RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install upgrade pip first
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install base Python dependencies (Web framework, util)
 RUN pip install --no-cache-dir -r requirements.txt
+
+# --- Manual Installation of ML Dependencies ---
+
+# 1. Install PyTorch Ecosystem (Large download)
+RUN pip install --no-cache-dir torch==2.5.1 torchvision==0.20.1
+
+# 2. Install General ML Libraries
+RUN pip install --no-cache-dir \
+    opencv-python-headless==4.10.0.84 \
+    trimesh==4.5.3 \
+    roma==1.5.0 \
+    huggingface-hub==0.26.5 \
+    lightning==2.4.0 \
+    einops==0.8.0 \
+    gradio==5.5.0 \
+    matplotlib==3.9.2 \
+    rembg==2.0.59 \
+    omegaconf==2.3.0 \
+    fire==0.6.0
+
+# 3. Install Fast3R (Recursively to get DUSt3R and CroCo)
+# We clone to /opt/fast3r and add to PYTHONPATH.
+# We skip requirements.txt because we installed dependencies manually above to avoid conflicts.
+RUN git clone --recursive https://github.com/facebookresearch/fast3r.git /opt/fast3r
+
+# Set PYTHONPATH so python can find fast3r and its submodules
+ENV PYTHONPATH="${PYTHONPATH}:/opt/fast3r"
+
+# --- End Manual Installation ---
 
 # Copy application code
 COPY . .
