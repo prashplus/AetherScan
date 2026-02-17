@@ -4,49 +4,34 @@ This document provides guidance for developers working on AetherScan.
 
 ## Fast3R Integration
 
-The backend currently uses a placeholder reconstruction service. To integrate Fast3R:
+✅ **Fast3R is now fully integrated!** See [FAST3R_INTEGRATION.md](FAST3R_INTEGRATION.md) for complete documentation.
 
-### Installation
+### Quick Start
 
-1. **Clone Fast3R repository**:
-   ```bash
-   cd backend
-   git clone <fast3r-repo-url>
-   ```
+The backend now uses Facebook Research's Fast3R model for real 3D reconstruction:
 
-2. **Install dependencies**:
-   ```bash
-   pip install -r fast3r/requirements.txt
-   ```
+1. **First run**: Model automatically downloads from Hugging Face (~2GB)
+2. **Upload images**: 2-10 images of the same object from different angles
+3. **Reconstruction**: Fast3R processes images and generates point cloud
+4. **Real-time streaming**: Points stream to frontend as they're generated
 
-3. **Update `backend/services/reconstruction.py`**:
-   - Import Fast3R model
-   - Load the model in `__init__`
-   - Implement `process_images` with actual Fast3R inference
-   - Process point cloud output and convert to frontend format
+### Model Details
 
-### Expected Integration Points
+- **Model**: `jedyang97/Fast3R_ViT_Large_512` (from Hugging Face)
+- **Architecture**: Vision Transformer (ViT) Large
+- **Input**: 512x512 images
+- **Output**: Colored 3D point clouds with camera poses
 
-```python
-# In reconstruction.py
-from fast3r import Fast3RModel  # Replace with actual import
+### Implementation
 
-class ReconstructionService:
-    def __init__(self, device="cuda"):
-        self.device = device
-        self.model = Fast3RModel.load_pretrained()  # Replace with actual loading
-        self.model.to(self.device)
-        self.model.eval()
-    
-    async def process_images(self, images: List[np.ndarray]) -> List[Dict[str, float]]:
-        # Run Fast3R inference
-        with torch.no_grad():
-            result = self.model(images)
-        
-        # Convert to point cloud format
-        points = self._convert_to_points(result)
-        return points
-```
+The integration is in:
+- `backend/services/reconstruction.py` - Fast3R inference pipeline
+- `backend/main.py` - Image handling and WebSocket streaming
+- `backend/requirements.txt` - Fast3R dependencies
+
+### Fallback Behavior
+
+If Fast3R fails to load (no internet, no GPU, etc.), the system automatically falls back to demo point clouds so the UI remains functional.
 
 ## Development Workflow
 

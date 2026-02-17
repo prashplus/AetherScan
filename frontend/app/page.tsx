@@ -8,7 +8,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { DropZone } from '@/components/DropZone';
 import { PointCloudCanvas } from '@/components/PointCloudCanvas';
-import { useWebSocket, type PointData } from '@/hooks/useWebSocket';
+import { useWebSocket, type PointData, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { Download, Activity, Wifi, WifiOff } from 'lucide-react';
 
 export default function Home() {
@@ -21,29 +21,43 @@ export default function Home() {
   // WebSocket connection
   // Fallback to localhost if env var is missing
   const wsUrl = process.env.NEXT_PUBLIC_BACKEND_WS || 'ws://localhost:8000';
+
+  console.log('Attempting WebSocket connection to: ws://localhost:8000/ws/reconstruct');
+
+  const handleMessage = useCallback((message: WebSocketMessage) => {
+    console.log('Received message:', message.type);
+
+    if (message.type === 'points' && message.data) {
+      // Add new points
+      const newPoints = message.data as PointData[];
+      allPointsRef.current = [...allPointsRef.current, ...newPoints];
+      setPoints([...newPoints]); // Trigger render with new batch
+    } else if (message.type === 'reconstruction_complete') {
+      console.log('Reconstruction complete!', message.total_points);
+      setIsProcessing(false);
+    } else if (message.type === 'pong') {
+      console.log('Pong received');
+    }
+  }, []);
+
+  const handleOpen = useCallback(() => {
+    console.log('✅ Connected to backend WebSocket');
+  }, []);
+
+  const handleClose = useCallback(() => {
+    console.log('❌ Disconnected from backend WebSocket');
+  }, []);
+
+  const handleError = useCallback((error: Event) => {
+    console.error('❌ WebSocket connection error:', error);
+  }, []);
+
   const { isConnected, connectionStatus, send } = useWebSocket({
     url: 'ws://localhost:8000/ws/reconstruct',
-    onMessage: (message) => {
-      console.log('Received message:', message.type);
-
-      if (message.type === 'points' && message.data) {
-        // Add new points
-        const newPoints = message.data as PointData[];
-        allPointsRef.current = [...allPointsRef.current, ...newPoints];
-        setPoints([...newPoints]); // Trigger render with new batch
-      } else if (message.type === 'reconstruction_complete') {
-        console.log('Reconstruction complete!', message.total_points);
-        setIsProcessing(false);
-      } else if (message.type === 'pong') {
-        console.log('Pong received');
-      }
-    },
-    onOpen: () => {
-      console.log('Connected to backend');
-    },
-    onClose: () => {
-      console.log('Disconnected from backend');
-    },
+    onMessage: handleMessage,
+    onOpen: handleOpen,
+    onClose: handleClose,
+    onError: handleError,
   });
 
   // Send ping every 30 seconds to keep connection alive

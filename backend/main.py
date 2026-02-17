@@ -7,6 +7,11 @@ import json
 import logging
 from typing import List
 import sys
+import base64
+from pathlib import Path
+import tempfile
+import os
+from services.reconstruction import get_reconstruction_service
 
 # Configure logging
 logging.basicConfig(
@@ -91,6 +96,10 @@ async def websocket_reconstruct(websocket: WebSocket):
     await websocket.accept()
     logger.info("WebSocket connection established")
     
+    # Store uploaded images for this session
+    session_images = []
+    temp_dir = None
+    
     try:
         while True:
             # Receive data from client
@@ -105,35 +114,128 @@ async def websocket_reconstruct(websocket: WebSocket):
                 
             elif message_type == "upload_complete":
                 # Client finished uploading images
-                logger.info(f"Client uploaded {message.get('count', 0)} images")
+                image_count = message.get('count', 0)
+                logger.info(f"Client uploaded {image_count} images")
                 
-                # TODO: Implement Fast3R reconstruction here
-                # For now, send demo point cloud data
-                await send_demo_points(websocket)
+                if len(session_images) == 0:
+                    logger.warning("No images received, sending demo points")
+                    await send_demo_points(websocket)
+                else:
+                    # Run Fast3R reconstruction
+                    logger.info(f"Starting reconstruction with {len(session_images)} images")
+                    await run_reconstruction(websocket, session_images)
                 
-                # Send completion signal
-                await websocket.send_json({
-                    "type": "reconstruction_complete",
-                    "total_points": 1000
-                })
+                # Clean up temp files
+                if temp_dir and os.path.exists(temp_dir):
+                    import shutil
+                    shutil.rmtree(temp_dir)
+                    logger.info("Cleaned up temporary files")
                 
             elif message_type == "image_data":
                 # Receive image data chunk
                 image_data = message.get("data")
-                logger.info(f"Received image data chunk: {len(image_data)} bytes")
+                filename = message.get("filename", f"image_{len(session_images)}.jpg")
                 
-                # TODO: Process image with Fast3R
-                # For now, acknowledge receipt
-                await websocket.send_json({
-                    "type": "image_received",
-                    "status": "processing"
-                })
+                logger.info(f"Received image: {filename}")
+                
+                try:
+                    # Create temp directory if needed
+                    if temp_dir is None:
+                        temp_dir = tempfile.mkdtemp(prefix="aetherscan_")
+                        logger.info(f"Created temp directory: {temp_dir}")
+                    
+                    # Decode base64 image data
+                    # Format: "data:image/jpeg;base64,/9j/4AAQ..."
+                    if ";base64," in image_data:
+                        image_data = image_data.split(";base64,")[1]
+                    
+                    image_bytes = base64.b64decode(image_data)
+                    
+                    # Save to temp file
+                    temp_path = os.path.join(temp_dir, filename)
+                    with open(temp_path, "wb") as f:
+                        f.write(image_bytes)
+                    
+                    session_images.append(temp_path)
+                    logger.info(f"Saved image to {temp_path} ({len(image_bytes)} bytes)")
+                    
+                    # Acknowledge receipt
+                    await websocket.send_json({
+                        "type": "image_received",
+                        "status": "saved",
+                        "filename": filename
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Failed to save image: {e}")
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Failed to save image: {str(e)}"
+                    })
                 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
+        import traceback
+        traceback.print_exc()
         await websocket.close(code=1011, reason=str(e))
+    finally:
+        # Clean up on disconnect
+        if temp_dir and os.path.exists(temp_dir):
+            import shutil
+            try:
+                shutil.rmtree(temp_dir)
+                logger.info("Cleaned up temporary files on disconnect")
+            except Exception as e:
+                logger.error(f"Failed to clean up temp dir: {e}")
+
+
+async def run_reconstruction(websocket: WebSocket, image_paths: List[str]):
+    """
+    Run Fast3R reconstruction and stream points to client
+    """
+    try:
+        # Get reconstruction service
+        service = get_reconstruction_service()
+        
+        # Process images
+        logger.info("Running Fast3R reconstruction...")
+        points = await service.process_images(image_paths)
+        
+        logger.info(f"Reconstruction complete. Got {len(points)} points")
+        
+        # Stream points in chunks
+        chunk_size = 100
+        for i in range(0, len(points), chunk_size):
+            chunk = points[i:i+chunk_size]
+            await websocket.send_json({
+                "type": "points",
+                "data": chunk
+            })
+            # Small delay to avoid overwhelming the client
+            await asyncio.sleep(0.01)
+        
+        # Send completion signal
+        await websocket.send_json({
+            "type": "reconstruction_complete",
+            "total_points": len(points)
+        })
+        
+    except Exception as e:
+        logger.error(f"Reconstruction failed: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Send error to client
+        await websocket.send_json({
+            "type": "error",
+            "message": f"Reconstruction failed: {str(e)}"
+        })
+        
+        # Fall back to demo points
+        logger.info("Falling back to demo points")
+        await send_demo_points(websocket)
 
 
 async def send_demo_points(websocket: WebSocket):
@@ -163,6 +265,12 @@ async def send_demo_points(websocket: WebSocket):
         
         # Small delay to simulate processing time
         await asyncio.sleep(0.01)
+    
+    # Send completion
+    await websocket.send_json({
+        "type": "reconstruction_complete",
+        "total_points": 1000
+    })
 
 
 @app.post("/export/ply")

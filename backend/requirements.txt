@@ -8,3 +8,16 @@ numpy==1.26.4
 Pillow==10.4.0
 scipy==1.14.1
 requests==2.32.3
+
+# OpenCV with headless version (no GUI dependencies)
+opencv-python-headless==4.10.0.84
+
+# 3D processing libraries
+trimesh==4.5.3
+roma==1.5.0
+huggingface-hub==0.26.5
+lightning==2.4.0
+einops==0.8.0
+
+# Note: Fast3R installation is complex and requires manual setup
+# See FAST3R_MANUAL_INSTALL.md for instructions

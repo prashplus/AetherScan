@@ -48,15 +48,17 @@ export function useWebSocket({
 
     const connect = useCallback(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
+            console.log('WebSocket already connected, skipping...');
             return;
         }
 
         try {
+            console.log(`[WebSocket] Attempting to connect to: ${url}`);
             setConnectionStatus('connecting');
             const ws = new WebSocket(url);
 
             ws.onopen = () => {
-                console.log('WebSocket connected');
+                console.log('[WebSocket] ✅ Connection established successfully');
                 setIsConnected(true);
                 setConnectionStatus('connected');
                 onOpen?.();
@@ -67,34 +69,40 @@ export function useWebSocket({
                     const message: WebSocketMessage = JSON.parse(event.data);
                     onMessage?.(message);
                 } catch (error) {
-                    console.error('Failed to parse WebSocket message:', error);
+                    console.error('[WebSocket] Failed to parse message:', error);
                 }
             };
 
-            ws.onclose = () => {
-                console.log('WebSocket disconnected');
+            ws.onclose = (event) => {
+                console.log(`[WebSocket] Connection closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}, Clean: ${event.wasClean}`);
                 setIsConnected(false);
                 setConnectionStatus('disconnected');
                 onClose?.();
 
                 // Auto-reconnect
                 if (autoReconnect && shouldReconnectRef.current) {
+                    console.log(`[WebSocket] Will attempt to reconnect in ${reconnectInterval}ms...`);
                     reconnectTimeoutRef.current = setTimeout(() => {
-                        console.log('Attempting to reconnect...');
+                        console.log('[WebSocket] Reconnecting...');
                         connect();
                     }, reconnectInterval);
                 }
             };
 
             ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
+                console.error('[WebSocket] ❌ Error occurred:', {
+                    readyState: ws.readyState,
+                    readyStateText: ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][ws.readyState],
+                    url: url,
+                    error: error
+                });
                 setConnectionStatus('error');
                 onError?.(error);
             };
 
             wsRef.current = ws;
         } catch (error) {
-            console.error('Failed to create WebSocket:', error);
+            console.error('[WebSocket] ❌ Failed to create WebSocket:', error);
             setConnectionStatus('error');
         }
     }, [url, onMessage, onOpen, onClose, onError, autoReconnect, reconnectInterval]);

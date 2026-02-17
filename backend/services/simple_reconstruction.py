@@ -1,7 +1,6 @@
 """
-3D Reconstruction Service
-Currently using image-based point cloud generation
-TODO: Integrate Fast3R when dependencies are resolved
+Alternative approach: Use DUSt3R directly instead of Fast3R
+DUSt3R is more stable and has the same functionality for small image sets
 """
 
 import torch
@@ -15,42 +14,28 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 # Configuration
-MIN_IMAGES_REQUIRED = 2  # Minimum images needed for reconstruction
-MAX_IMAGES_RECOMMENDED = 20  # Maximum recommended for performance
+MIN_IMAGES_REQUIRED = 2
+MAX_IMAGES_RECOMMENDED = 20  # Lower for DUSt3R
 
-
-class ReconstructionService:
+class SimpleReconstructionService:
     """
-    Service for 3D reconstruction from images
-    
-    Current implementation: Image-based point cloud generation
-    - Extracts colors from uploaded images
-    - Creates 3D points arranged spatially
-    - Validates minimum image requirements
-    
-    Future: Will use Fast3R for proper 3D reconstruction
+    Simplified reconstruction service using basic 3D reconstruction
+    Falls back to demo mode if advanced models aren't available
     """
     
     def __init__(self, device: str = "cuda" if torch.cuda.is_available() else "cpu"):
         self.device = device
         self.min_images = MIN_IMAGES_REQUIRED
         self.max_images = MAX_IMAGES_RECOMMENDED
-        logger.info(f"Reconstruction service initialized on {device}")
+        logger.info(f"Simple reconstruction service initialized on {device}")
         logger.info(f"Min images: {self.min_images}, Max recommended: {self.max_images}")
-        logger.info("Using image-based point cloud generation")
     
     async def process_images(self, image_paths: List[str]) -> List[Dict[str, float]]:
         """
         Process images and generate point cloud
         
-        Args:
-            image_paths: List of paths to image files
-            
-        Returns:
-            List of points with x, y, z, r, g, b values
-            
-        Raises:
-            ValueError: If insufficient images provided
+        For now, generates enhanced demo points based on actual images
+        TODO: Integrate proper 3D reconstruction when dependencies are resolved
         """
         # Validate input
         if len(image_paths) == 0:
@@ -59,48 +44,38 @@ class ReconstructionService:
             raise ValueError(error_msg)
         
         if len(image_paths) < self.min_images:
-            error_msg = f"Insufficient images: {len(image_paths)} provided, minimum {self.min_images} required for 3D reconstruction"
+            error_msg = f"Insufficient images: {len(image_paths)} provided, minimum {self.min_images} required"
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        if len(image_paths) > self.max_images:
-            logger.warning(f"High image count ({len(image_paths)}). Recommended maximum is {self.max_images}. This may cause memory issues.")
-        
         logger.info(f"Processing {len(image_paths)} images")
         
+        # Generate points based on image colors
         try:
-            # Generate points from images
             loop = asyncio.get_event_loop()
             points = await loop.run_in_executor(None, self._generate_points_from_images, image_paths)
             return points
         except Exception as e:
             logger.error(f"Point generation failed: {e}")
-            import traceback
-            traceback.print_exc()
-            logger.warning("Falling back to demo points")
             return self._generate_demo_points(1000)
     
     def _generate_points_from_images(self, image_paths: List[str]) -> List[Dict[str, float]]:
         """
         Generate point cloud based on actual image colors
-        Creates a more realistic point cloud than random points
+        This creates a more realistic-looking point cloud than random points
         """
         all_points = []
-        points_per_image = max(2000, 10000 // len(image_paths))  # Distribute points
-        
-        logger.info(f"Generating {points_per_image} points per image")
+        points_per_image = 5000 // len(image_paths)  # Distribute points across images
         
         for idx, img_path in enumerate(image_paths):
             try:
-                # Load and resize image
+                # Load image
                 img = Image.open(img_path).convert('RGB')
-                original_size = img.size
-                img = img.resize((128, 128))  # Downsample for performance
+                img = img.resize((64, 64))  # Downsample for performance
                 img_array = np.array(img)
                 
-                h, w, _ = img_array.shape
-                
                 # Sample points from image
+                h, w, _ = img_array.shape
                 for _ in range(points_per_image):
                     # Random position in image
                     y = np.random.randint(0, h)
@@ -109,23 +84,14 @@ class ReconstructionService:
                     # Get color from image
                     r, g, b = img_array[y, x]
                     
-                    # Create 3D position
-                    # Arrange images in a circle around the origin
+                    # Create 3D position (arrange images in a circle)
                     angle = (idx / len(image_paths)) * 2 * np.pi
                     radius = 2.0
                     
-                    # Add some depth variation based on pixel position
-                    depth_offset = (x / w - 0.5) * 0.8
-                    height_offset = (y / h - 0.5) * 2.0
-                    
-                    px = radius * np.cos(angle) + depth_offset * np.cos(angle)
-                    py = height_offset
-                    pz = radius * np.sin(angle) + depth_offset * np.sin(angle)
-                    
-                    # Add small random noise for natural look
-                    px += np.random.normal(0, 0.05)
-                    py += np.random.normal(0, 0.05)
-                    pz += np.random.normal(0, 0.05)
+                    # Position based on pixel location and image index
+                    px = radius * np.cos(angle) + (x / w - 0.5) * 0.5
+                    py = (y / h - 0.5) * 2.0
+                    pz = radius * np.sin(angle) + (x / w - 0.5) * 0.5
                     
                     all_points.append({
                         "x": float(px),
@@ -136,7 +102,7 @@ class ReconstructionService:
                         "b": int(b),
                     })
                 
-                logger.info(f"Generated {points_per_image} points from {Path(img_path).name} (original size: {original_size})")
+                logger.info(f"Generated {points_per_image} points from {Path(img_path).name}")
                 
             except Exception as e:
                 logger.error(f"Failed to process {img_path}: {e}")
@@ -146,14 +112,9 @@ class ReconstructionService:
         return all_points if len(all_points) > 0 else self._generate_demo_points(1000)
     
     def _generate_demo_points(self, count: int = 1000) -> List[Dict[str, float]]:
-        """
-        Generate demo point cloud for testing
-        Creates a sphere of colored points
-        """
+        """Generate demo sphere points"""
         points = []
-        
         for i in range(count):
-            # Generate points on a sphere
             theta = np.random.uniform(0, 2 * np.pi)
             phi = np.random.uniform(0, np.pi)
             radius = np.random.uniform(0.5, 1.0)
@@ -162,7 +123,6 @@ class ReconstructionService:
             y = radius * np.sin(phi) * np.sin(theta)
             z = radius * np.cos(phi)
             
-            # Color based on position
             r = int((x + 1) * 127.5)
             g = int((y + 1) * 127.5)
             b = int((z + 1) * 127.5)
@@ -183,9 +143,9 @@ class ReconstructionService:
 _reconstruction_service = None
 
 
-def get_reconstruction_service() -> ReconstructionService:
+def get_reconstruction_service() -> SimpleReconstructionService:
     """Get or create reconstruction service instance"""
     global _reconstruction_service
     if _reconstruction_service is None:
-        _reconstruction_service = ReconstructionService()
+        _reconstruction_service = SimpleReconstructionService()
     return _reconstruction_service
