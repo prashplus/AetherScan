@@ -19,7 +19,7 @@ services:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu]
+              capabilities: [ gpu ]
     networks:
       - aetherscan-network
     restart: unless-stopped
@@ -28,6 +28,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: dev
+    command: npm run dev
     container_name: aetherscan-frontend
     ports:
       - "3000:3000"
@@ -38,8 +40,8 @@ services:
       - ./shared:/shared
     environment:
       - NODE_ENV=development
-      - NEXT_PUBLIC_BACKEND_WS=ws://backend:8000
-      - NEXT_PUBLIC_BACKEND_HTTP=http://backend:8000
+      - NEXT_PUBLIC_BACKEND_WS=ws://localhost:8000
+      - NEXT_PUBLIC_BACKEND_HTTP=http://localhost:8000
     depends_on:
       - backend
     networks:

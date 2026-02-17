@@ -19,9 +19,10 @@ export default function Home() {
   const allPointsRef = useRef<PointData[]>([]);
 
   // WebSocket connection
+  // Fallback to localhost if env var is missing
   const wsUrl = process.env.NEXT_PUBLIC_BACKEND_WS || 'ws://localhost:8000';
   const { isConnected, connectionStatus, send } = useWebSocket({
-    url: `${wsUrl}/ws/reconstruct`,
+    url: 'ws://localhost:8000/ws/reconstruct',
     onMessage: (message) => {
       console.log('Received message:', message.type);
 
