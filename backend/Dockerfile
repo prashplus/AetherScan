@@ -35,37 +35,19 @@ COPY requirements.txt .
 # Install upgrade pip first
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install base Python dependencies (Web framework, util)
-RUN pip install --no-cache-dir -r requirements.txt
-
-# --- Manual Installation of ML Dependencies ---
-
-# 1. Install PyTorch Ecosystem (Large download)
-RUN pip install --no-cache-dir torch==2.5.1 torchvision==0.20.1
-
-# 2. Install General ML Libraries
+# Install all Python dependencies (web framework, numerics, PyTorch CUDA, ML libs)
+# --extra-index-url ensures torch/torchvision resolve to CUDA 12.1 wheels from the PyTorch index
 RUN pip install --no-cache-dir \
-    opencv-python-headless==4.10.0.84 \
-    trimesh==4.5.3 \
-    roma==1.5.0 \
-    huggingface-hub==0.26.5 \
-    lightning==2.4.0 \
-    einops==0.8.0 \
-    gradio==5.5.0 \
-    matplotlib==3.9.2 \
-    rembg==2.0.59 \
-    omegaconf==2.3.0 \
-    fire==0.6.0
+    --extra-index-url https://download.pytorch.org/whl/cu121 \
+    -r requirements.txt
 
-# 3. Install Fast3R (Recursively to get DUSt3R and CroCo)
-# We clone to /opt/fast3r and add to PYTHONPATH.
-# We skip requirements.txt because we installed dependencies manually above to avoid conflicts.
+# Install Fast3R (Recursively to get DUSt3R and CroCo)
+# Cloned to /opt/fast3r and added to PYTHONPATH; installed via pip -e to avoid
+# re-installing its Python deps (already satisfied by requirements.txt above).
 RUN git clone --recursive https://github.com/facebookresearch/fast3r.git /opt/fast3r
 
 # Set PYTHONPATH so python can find fast3r and its submodules
 ENV PYTHONPATH="${PYTHONPATH}:/opt/fast3r"
-
-# --- End Manual Installation ---
 
 # Copy application code
 COPY . .

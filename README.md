@@ -38,6 +38,7 @@ A high-performance 3D reconstruction web application with GPU-accelerated backen
 - Docker & Docker Compose
 - NVIDIA GPU with CUDA support
 - NVIDIA Container Toolkit
+- **Local dev only**: [Miniconda/Anaconda](https://docs.conda.io/en/latest/miniconda.html) with Python 3.11 (`conda create -n aether python=3.11`)
 
 ## Quick Start
 
@@ -106,9 +107,23 @@ npm run dev
 
 ### Backend Only
 
+> **Requires Python 3.11** (Fast3R has strict version constraints). Use the `aether` conda env:
+
 ```bash
+# 1. Activate the conda environment
+conda activate aether
+
+# 2. Install Python dependencies
 cd backend
 pip install -r requirements.txt
+
+# 3. Clone Fast3R (includes DUSt3R and CroCo submodules)
+git clone --recursive https://github.com/facebookresearch/fast3r.git ../fast3r
+
+# 4. Install Fast3R as an editable package (one-time)
+pip install -e ../fast3r
+
+# 5. Start the backend
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
