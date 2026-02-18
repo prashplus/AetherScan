@@ -36,36 +36,66 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global state for GPU check
+# Global state for GPU/accelerator check
 GPU_AVAILABLE = False
 GPU_INFO = {}
+
+def get_best_device() -> str:
+    """Return the best available torch device: cuda > mps > cpu"""
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 
 @app.on_event("startup")
 async def startup_event():
-    """Check GPU availability on startup"""
+    """Detect accelerator and eagerly load the Fast3R model."""
     global GPU_AVAILABLE, GPU_INFO
-    
-    GPU_AVAILABLE = torch.cuda.is_available()
-    
-    if GPU_AVAILABLE:
+
+    device = get_best_device()
+
+    if device == "cuda":
+        GPU_AVAILABLE = True
         GPU_INFO = {
             "available": True,
+            "backend": "cuda",
             "device_count": torch.cuda.device_count(),
             "device_name": torch.cuda.get_device_name(0) if torch.cuda.device_count() > 0 else None,
             "cuda_version": torch.version.cuda,
             "pytorch_version": torch.__version__,
         }
-        logger.info(f"✅ GPU is available: {GPU_INFO['device_name']}")
-        logger.info(f"   CUDA Version: {GPU_INFO['cuda_version']}")
-        logger.info(f"   PyTorch Version: {GPU_INFO['pytorch_version']}")
+        logger.info(f"✅ CUDA GPU available: {GPU_INFO['device_name']}")
+    elif device == "mps":
+        GPU_AVAILABLE = True
+        GPU_INFO = {
+            "available": True,
+            "backend": "mps",
+            "device_name": "Apple Silicon GPU (MPS)",
+            "pytorch_version": torch.__version__,
+        }
+        logger.info("✅ Apple Silicon MPS GPU available")
     else:
+        GPU_AVAILABLE = False
         GPU_INFO = {
             "available": False,
-            "message": "No GPU detected. Running in CPU mode."
+            "backend": "cpu",
+            "message": "No GPU detected. Running in CPU mode.",
         }
-        logger.warning("⚠️  GPU is NOT available. Running in CPU mode.")
-        logger.warning("   Please ensure NVIDIA drivers and CUDA are properly installed.")
+        logger.warning("⚠️  No GPU detected. Running in CPU mode.")
+
+    # Eagerly load Fast3R — blocks until weights are downloaded + loaded.
+    # The server is technically accepting connections at this point but
+    # reconstruction requests will get a "not ready" error until this finishes.
+    logger.info("Initialising reconstruction service …")
+    loop = asyncio.get_event_loop()
+    try:
+        service = get_reconstruction_service()
+        await loop.run_in_executor(None, service.initialize)
+    except Exception as e:
+        logger.error(f"❌ Failed to initialise reconstruction service: {e}")
+        raise
 
 
 @app.get("/")
@@ -80,11 +110,32 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint with GPU status"""
+    """Health check endpoint with GPU and model status"""
+    service = get_reconstruction_service()
     return {
         "status": "healthy",
-        "gpu": GPU_INFO
+        "gpu": GPU_INFO,
+        "model_ready": service.ready,
     }
+
+
+@app.get("/status")
+async def status():
+    """
+    Lightweight readiness probe.
+    Returns 200 + ready=true once the Fast3R model is fully loaded.
+    Returns 503 + ready=false while the model is still loading.
+    """
+    service = get_reconstruction_service()
+    if service.ready:
+        return JSONResponse(
+            status_code=200,
+            content={"ready": True, "message": "Model loaded and ready"}
+        )
+    return JSONResponse(
+        status_code=503,
+        content={"ready": False, "message": "Model is still loading — please wait"}
+    )
 
 
 @app.websocket("/ws/reconstruct")
@@ -156,7 +207,9 @@ async def websocket_reconstruct(websocket: WebSocket):
                     with open(temp_path, "wb") as f:
                         f.write(image_bytes)
                     
-                    session_images.append(temp_path)
+                    # Resolve real path to avoid macOS symlink issues
+                    # (/var/folders/... vs /private/var/folders/...)
+                    session_images.append(os.path.realpath(temp_path))
                     logger.info(f"Saved image to {temp_path} ({len(image_bytes)} bytes)")
                     
                     # Acknowledge receipt
@@ -227,15 +280,11 @@ async def run_reconstruction(websocket: WebSocket, image_paths: List[str]):
         import traceback
         traceback.print_exc()
         
-        # Send error to client
+        # Send error to client — do NOT fall back to demo points
         await websocket.send_json({
             "type": "error",
             "message": f"Reconstruction failed: {str(e)}"
         })
-        
-        # Fall back to demo points
-        logger.info("Falling back to demo points")
-        await send_demo_points(websocket)
 
 
 async def send_demo_points(websocket: WebSocket):

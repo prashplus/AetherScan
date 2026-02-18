@@ -1,0 +1,11 @@
+# Fast3R — cloned locally for installation, not committed
+fast3r/
+
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
