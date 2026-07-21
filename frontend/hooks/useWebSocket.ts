@@ -19,6 +19,9 @@ export interface WebSocketMessage {
     data?: any;
     status?: string;
     total_points?: number;
+    filename?: string;
+    message?: string;
+    count?: number;
 }
 
 interface UseWebSocketOptions {

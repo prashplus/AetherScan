@@ -38,7 +38,7 @@ export default function Home() {
     } else if (message.type === 'error') {
       console.error('Backend error:', message);
       setIsProcessing(false);
-      alert(`Reconstruction error: ${(message as any).message || 'Unknown error'}`);
+      alert(`Reconstruction error: ${message.message || 'Unknown error'}`);
     } else if (message.type === 'image_received') {
       console.log('Image received by backend:', message.filename);
     } else if (message.type === 'pong') {
