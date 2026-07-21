@@ -6,14 +6,14 @@ WORKDIR /app
 # Prevent interactive prompts during build
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Python 3.12 and system dependencies
+# Install Python 3.11 and system dependencies
 RUN apt-get update && apt-get install -y \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get update && apt-get install -y \
-    python3.12 \
-    python3.12-dev \
-    python3.12-venv \
+    python3.11 \
+    python3.11-dev \
+    python3.11-venv \
     git \
     wget \
     curl \
@@ -23,11 +23,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create symbolic links for python
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
-    && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
 
-# Install pip for Python 3.12
-RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
+# Install pip for Python 3.11
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
 
 # Copy requirements first for better caching
 COPY requirements.txt .
@@ -37,7 +37,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Install all Python dependencies (web framework, numerics, PyTorch CUDA, ML libs)
 # --extra-index-url ensures torch/torchvision resolve to CUDA 12.1 wheels from the PyTorch index
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir --ignore-installed \
     --extra-index-url https://download.pytorch.org/whl/cu121 \
     -r requirements.txt
 

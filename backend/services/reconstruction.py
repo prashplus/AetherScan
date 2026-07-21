@@ -110,14 +110,34 @@ class ReconstructionService:
         from fast3r.dust3r.utils.image import load_images
         from fast3r.dust3r.inference_multiview import inference
 
-        logger.info(f"Running Fast3R inference on {len(image_paths)} images …")
-        images = load_images(image_paths, size=512, verbose=False)
+        # Clear CUDA cache to prevent memory fragmentation
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-        with torch.no_grad():
-            output_dict = inference(
-                images, self.model, torch.device(self.device),
-                dtype=torch.float32, verbose=False
-            )
+        num_images = len(image_paths)
+        # Determine image size dynamically to prevent CUDA OOM on consumer GPUs
+        if num_images <= 3:
+            img_size = 512
+        elif num_images <= 6:
+            img_size = 384
+        else:
+            img_size = 256
+
+        logger.info(f"Running Fast3R inference on {num_images} images (resolution={img_size}px) …")
+        images = load_images(image_paths, size=img_size, verbose=False)
+
+        precision = "16-mixed" if self.device == "cuda" else "32"
+
+        try:
+            with torch.no_grad():
+                output_dict = inference(
+                    images, self.model, torch.device(self.device),
+                    dtype=precision, verbose=False
+                )
+        finally:
+            # Clear CUDA cache after running inference
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         all_points = []
         for view_idx, pred in enumerate(output_dict['preds']):
