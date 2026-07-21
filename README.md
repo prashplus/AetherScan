@@ -14,6 +14,33 @@ A high-performance 3D reconstruction web application with GPU-accelerated backen
 - 📦 **Docker Ready**: Complete containerization with GPU support
 - 🔄 **Hot Reload**: Development workflow with live reloading
 
+## System Flow
+
+```mermaid
+flowchart TD
+    subgraph Frontend [Next.js Client]
+        A[DropZone UI] -->|Select Images| B[FileReader]
+        B -->|base64 chunks| C[WebSocket Connection]
+        F[usePointStream Hook] -->|Updates BufferGeometry| G[React Three Fiber Canvas]
+        G -->|WebGL Render| H[3D Point Cloud]
+    end
+
+    subgraph Backend [FastAPI Server]
+        D[WebSocket Endpoint] -->|Decodes & Saves| E[Temp Image Directory]
+        E -->|Trigger Inference| I[Reconstruction Service]
+        I -->|Fast3R Model| J[PyTorch / GPU Inference]
+        J -->|Generate x,y,z,r,g,b points| K[Stream Controller]
+    end
+
+    C -->|upload_complete| D
+    K -->|points / reconstruction_complete| C
+```
+
+Here's how data flows through the application:
+1. **Upload**: Images are selected, converted to base64, and sent to the backend via WebSockets.
+2. **Reconstruction**: The FastAPI server processes the images using **Fast3R** on the GPU (PyTorch/CUDA) to compute dense 3D points.
+3. **Real-time Streaming**: Points are streamed back in chunks, bypassed React state rendering using raw Float32Array buffers, and immediately visualized in R3F.
+
 ## Tech Stack
 
 ### Frontend
